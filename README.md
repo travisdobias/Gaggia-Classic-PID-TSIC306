@@ -11,7 +11,5 @@ The project uses:
 - able to heat boiler while brew switch is on to maintain water temp during brew
 - switchable logging to CSV
 - switchable verbose logging to console
+- LCD temp display for 1602 via I2C interface
 
-# Limitations:
-- no steam switch yet
-- no user interface
