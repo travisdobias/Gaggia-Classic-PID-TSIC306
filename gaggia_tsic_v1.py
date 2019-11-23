@@ -36,7 +36,10 @@ the coffee machine from the main current before working inside the machine.
 # PIN 17 - 3.3v for brew switch - brown wire
 # PIN 13 - GPIO 27 for brew switch - green wire
 
-
+# PIN 4 - 5v for LCD
+# PIN 6 - ground for LCD
+# PIN 3 - SCA for LCD
+# PIN 5 - SCL for LCD
 
 you can run the program from a ssh session, but if the session hangs, the
 program will hang, and the boiler should cut off.
@@ -56,6 +59,7 @@ import time
 import RPi.GPIO as GPIO
 import signal
 import sys
+import I2C_LCD_driver
 from datetime import datetime
 
 GPIO.setmode(GPIO.BCM)
@@ -64,6 +68,7 @@ GPIO.setup(23, GPIO.OUT)
 GPIO.setup(24, GPIO.OUT)
 GPIO.setup(27, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
+mylcd = I2C_LCD_driver.lcd()
 pi = pigpio.pi()
 tsic = TsicInputChannel(pigpio_pi=pi, gpio=17, tsic_type=TSIC306)
 
@@ -120,6 +125,10 @@ class PIDController:
         else:
             boilerPWM.stop()
             self.boiler=0
+        # write temp to LCD
+        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c "+str(self.output)+"% PWR ",1,0)
+        mylcd.lcd_display_string(time.strftime("%A")+"  "+time.strftime("%H:%M"),2,0)
+
         time.sleep(.3)
 
 
@@ -147,7 +156,16 @@ def BrewButton():
             boilerPWM.start(boost) # heat boiler while pump is running to maintain temp
         else:
             boilerPWM.stop()
+
+        # write temp to LCD
+        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c "+str(boost)+"% BRW ",1,0)
+        mylcd.lcd_display_string(time.strftime("%A")+"  "+time.strftime("%H:%M"),2,0)
+
+
         time.sleep(.3)
+
+        if logging:
+            logfile.write(time.strftime("%H:%M:%S")+","+str(sensor_reading)+","+str(boost)+"\r\n")
 
         if verbose:
             print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(boost), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Brew'))
@@ -166,6 +184,9 @@ def SteamButton():
         else:
             boilerPWM.stop()
         time.sleep(.3)
+        # write temp to LCD
+        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c "+str(boost)+"% STM ",1,0)
+        mylcd.lcd_display_string(time.strftime("%A")+"  "+time.strftime("%H:%M"),2,0)
 
         if verbose:
             print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(boost), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Steam'))
@@ -220,13 +241,15 @@ while True:
     # the brew switch of the gaggia is rewired to the GPIO to run the
     # pump and boiler at the same time in the BrewButton function
     if GPIO.input(27):
-        BrewButton()
+        if abs(sensor_reading - setpoint) < 1: #don't start brew unless temp is in range
+            BrewButton()
 
 #    if GPIO.input(40):
 #        SteamButton()
 
     # get the temperature reading from the sensor
     sensor_reading = read_temp()
+
 
     # update the PID
     PID.calc(sensor_reading)
@@ -235,8 +258,8 @@ while True:
     if verbose:
         print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(PID.sensor_reading), "{0:8.0f}".format(PID.boiler), "{0:8.1f}".format(PID.output),"{0:8.1f}".format(PID.delta * PID.Kp),"{0:8.1f}".format(PID.integral * PID.Ki),"{0:8.1f}".format(PID.Kd * PID.derivative),"{0:>8s}".format('PID'))
 
-    if logging:
-        logfile.write(time.strftime("%H:%M:%S")+","+str(PID.sensor_reading)+","+str(PID.boiler)+","+str(PID.output)+","+str((PID.delta * PID.Kp))+","+str((PID.integral * PID.Ki))+","+str((PID.Kd * PID.derivative))+",PID\r\n")
+    # if logging:
+    #     logfile.write(time.strftime("%H:%M:%S")+","+str(PID.sensor_reading)+","+str(PID.boiler)+","+str(PID.output)+","+str((PID.delta * PID.Kp))+","+str((PID.integral * PID.Ki))+","+str((PID.Kd * PID.derivative))+",PID\r\n")
 
     # this traps errors including keyboard interrupt to switch the boiler
     # off safely in case of exit or kill of the process
@@ -247,6 +270,7 @@ while True:
         boilerPWM.stop()
         GPIO.cleanup() # this ensures a clean exit
         pi.stop()
+        mylcd.lcd_clear()
         print("---GPIOs released--")
         print("---Program end--")
         break
