@@ -126,8 +126,13 @@ class PIDController:
             boilerPWM.stop()
             self.boiler=0
         # write temp to LCD
-        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c "+str(self.output)+"% PWR ",1,0)
-        mylcd.lcd_display_string(time.strftime("%A")+"  "+time.strftime("%H:%M"),2,0)
+
+        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c ",1,0)
+        mylcd.lcd_display_string("{:5d}".format(self.output)+"% PID",1,6)
+        mylcd.lcd_display_string(time.strftime("%A"),2,0)
+        mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
+
+
 
         time.sleep(.3)
 
@@ -158,8 +163,11 @@ def BrewButton():
             boilerPWM.stop()
 
         # write temp to LCD
-        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c "+str(boost)+"% BRW ",1,0)
-        mylcd.lcd_display_string(time.strftime("%A")+"  "+time.strftime("%H:%M"),2,0)
+        mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
+        mylcd.lcd_display_string("{:5d}".format(boost)+"% BRW",1,6)
+        mylcd.lcd_display_string(time.strftime("%A"),2,0)
+        mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
+
 
 
         time.sleep(.3)
@@ -271,6 +279,7 @@ while True:
         GPIO.cleanup() # this ensures a clean exit
         pi.stop()
         mylcd.lcd_clear()
+        mylcd.lcd_display_string("--Program end--",1,0)
         print("---GPIOs released--")
         print("---Program end--")
         break
