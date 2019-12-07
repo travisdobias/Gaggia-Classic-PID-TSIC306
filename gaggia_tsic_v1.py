@@ -146,6 +146,11 @@ def read_temp():
 # this function is triggered when the brewbutton is switched on
 def BrewButton():
 
+    #preheat boiler elements for 1 second before pumping
+    boilerPWM.start(100)
+    time.sleep(1)
+    boilerPWM.stop()
+
     # start pump (gaggia pump switch is rewired to a FOSTEK SSR)
     GPIO.output(24,GPIO.HIGH)
 
@@ -155,8 +160,8 @@ def BrewButton():
     while GPIO.input(27):
         boost=boost+1
         sensor_reading=read_temp()
-        if boost>80:
-            boost=80
+        if boost>60:
+            boost=60
         if sensor_reading < setpoint:
             boilerPWM.start(boost) # heat boiler while pump is running to maintain temp
         else:
@@ -167,8 +172,6 @@ def BrewButton():
         mylcd.lcd_display_string("{:5d}".format(boost)+"% BRW",1,6)
         mylcd.lcd_display_string(time.strftime("%A"),2,0)
         mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
-
-
 
         time.sleep(.3)
 
@@ -193,8 +196,10 @@ def SteamButton():
             boilerPWM.stop()
         time.sleep(.3)
         # write temp to LCD
-        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c "+str(boost)+"% STM ",1,0)
-        mylcd.lcd_display_string(time.strftime("%A")+"  "+time.strftime("%H:%M"),2,0)
+        mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
+        mylcd.lcd_display_string("{:5d}".format(boost)+"% STM",1,6)
+        mylcd.lcd_display_string(time.strftime("%A"),2,0)
+        mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
 
         if verbose:
             print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(boost), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Steam'))
@@ -224,6 +229,7 @@ Kd = 48  #.030 is 1.1 degree
 antiwindup = 2
 logging = False
 verbose = False
+timer = 0
 
 # instantiate PID object
 PID=PIDController(setpoint, antiwindup, Kp, Kd, Ki)
@@ -249,9 +255,10 @@ while True:
     # the brew switch of the gaggia is rewired to the GPIO to run the
     # pump and boiler at the same time in the BrewButton function
     if GPIO.input(27):
-        if abs(sensor_reading - setpoint) < 1: #don't start brew unless temp is in range
-            BrewButton()
-
+    #    if abs(sensor_reading - setpoint) < 1: #don't start brew unless temp is in range
+        BrewButton()
+        timer = 0
+    timer = timer +1
 #    if GPIO.input(40):
 #        SteamButton()
 
@@ -260,7 +267,13 @@ while True:
 
 
     # update the PID
-    PID.calc(sensor_reading)
+    if timer < 1000:
+        PID.calc(sensor_reading)
+    else:
+        mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
+        mylcd.lcd_display_string("    SLEEP",1,7)
+        mylcd.lcd_display_string(time.strftime("%A"),2,0)
+        mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
 
     # logging features
     if verbose:
