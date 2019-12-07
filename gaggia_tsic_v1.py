@@ -125,17 +125,12 @@ class PIDController:
         else:
             boilerPWM.stop()
             self.boiler=0
-        # write temp to LCD
 
-        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c ",1,0)
-        mylcd.lcd_display_string("{:5d}".format(self.output)+"% PID",1,6)
-        mylcd.lcd_display_string(time.strftime("%A"),2,0)
-        mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
-
-
+        # debug features
+        if verbose:
+            print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(self.sensor_reading), "{0:8.0f}".format(self.boiler), "{0:8.1f}".format(self.output),"{0:8.1f}".format(self.delta * self.Kp),"{0:8.1f}".format(self.integral * self.Ki),"{0:8.1f}".format(self.Kd * self.derivative),"{0:>8s}".format('PID'))
 
         time.sleep(.3)
-
 
 def read_temp():
 
@@ -160,8 +155,8 @@ def BrewButton():
     while GPIO.input(27):
         boost=boost+1
         sensor_reading=read_temp()
-        if boost>60:
-            boost=60
+        if boost>50:
+            boost=50
         if sensor_reading < setpoint:
             boilerPWM.start(boost) # heat boiler while pump is running to maintain temp
         else:
@@ -174,9 +169,6 @@ def BrewButton():
         mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
 
         time.sleep(.3)
-
-        if logging:
-            logfile.write(time.strftime("%H:%M:%S")+","+str(sensor_reading)+","+str(boost)+"\r\n")
 
         if verbose:
             print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(boost), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Brew'))
@@ -216,7 +208,6 @@ killer = GracefulKiller()
 boilerPWM=GPIO.PWM(23, 50)
 
 # environment variables; could be put in an include file
-logfilename = datetime.now().strftime('PIDlogfile_%Y-%m-%d_%H-%M-%S') +".csv"
 integral = 0
 delta = 0
 derivative = 0
@@ -227,19 +218,13 @@ Kp = 6
 Ki = 0.06 #0.03
 Kd = 48  #.030 is 1.1 degree
 antiwindup = 2
-logging = False
 verbose = False
-timeout = time.time() + 60*30
+minutes = 30
+timeout = time.time() + 60*minutes
 
 # instantiate PID object
 PID=PIDController(setpoint, antiwindup, Kp, Kd, Ki)
 
-if logging:
-    logfile = open(logfilename, "w+")
-    logfile.write("Gaggia PID Started: "+ str(os.path.basename(__file__))+"\r\n")
-    logfile.write("Press control-c or kill " +str(os.getpid())+ " to end.")
-    logfile.write("Setpoint:,"+str(setpoint)+"\r\ndt:,"+str(dt)+"\r\nKp:,"+str(Kp)+"\r\nKi:,"+str(Ki)+"\r\nKd:,"+str(Kd)+"\r\n")
-    logfile.write("Time,temp,boiler,Out,P,I,D,state\r\n")
 
 print("Gaggia PID Started:", os.path.basename(__file__))
 if verbose:
@@ -251,43 +236,36 @@ else:
 
 #MAIN LOOP
 while True:
-
-    # the brew switch of the gaggia is rewired to the GPIO to run the
-    # pump and boiler at the same time in the BrewButton function
-    if GPIO.input(27):
-    #    if abs(sensor_reading - setpoint) < 1: #don't start brew unless temp is in range
-        BrewButton()
-        timeout = time.time() + 60*30
-
-#    if GPIO.input(40):
-#        SteamButton()
-
     # get the temperature reading from the sensor
     sensor_reading = read_temp()
-
-
     # update the PID
     if time.time() < timeout:
         PID.calc(sensor_reading)
+        mylcd.lcd_display_string("{0:0.1f}".format(PID.sensor_reading)+chr(223)+"c ",1,0)
+        mylcd.lcd_display_string("{:5d}".format(PID.output)+"% PID",1,6)
+        mylcd.lcd_display_string(time.strftime("%A"),2,0)
+        mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
     else:
         mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
         mylcd.lcd_display_string("    SLEEP",1,7)
         mylcd.lcd_display_string(time.strftime("%A"),2,0)
         mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
+        if verbose:
+            print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Sleep'))
 
-    # logging features
-    if verbose:
-        print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(PID.sensor_reading), "{0:8.0f}".format(PID.boiler), "{0:8.1f}".format(PID.output),"{0:8.1f}".format(PID.delta * PID.Kp),"{0:8.1f}".format(PID.integral * PID.Ki),"{0:8.1f}".format(PID.Kd * PID.derivative),"{0:>8s}".format('PID'))
+    if GPIO.input(27):
+    #    if abs(sensor_reading - setpoint) < 1: #don't start brew unless temp is in range
+        BrewButton()
+        timeout = time.time() + 60*minutes
 
-    # if logging:
-    #     logfile.write(time.strftime("%H:%M:%S")+","+str(PID.sensor_reading)+","+str(PID.boiler)+","+str(PID.output)+","+str((PID.delta * PID.Kp))+","+str((PID.integral * PID.Ki))+","+str((PID.Kd * PID.derivative))+",PID\r\n")
+#    if GPIO.input(40):
+#        SteamButton()
+
 
     # this traps errors including keyboard interrupt to switch the boiler
     # off safely in case of exit or kill of the process
 
     if killer.kill_now:
-        if logging:
-            logfile.close()
         boilerPWM.stop()
         GPIO.cleanup() # this ensures a clean exit
         pi.stop()
