@@ -229,7 +229,7 @@ Kd = 48  #.030 is 1.1 degree
 antiwindup = 2
 logging = False
 verbose = False
-timer = 0
+timeout = time.time() + 60*30
 
 # instantiate PID object
 PID=PIDController(setpoint, antiwindup, Kp, Kd, Ki)
@@ -257,8 +257,8 @@ while True:
     if GPIO.input(27):
     #    if abs(sensor_reading - setpoint) < 1: #don't start brew unless temp is in range
         BrewButton()
-        timer = 0
-    timer = timer +1
+        timeout = time.time() + 60*30
+
 #    if GPIO.input(40):
 #        SteamButton()
 
@@ -267,7 +267,7 @@ while True:
 
 
     # update the PID
-    if timer < 1000:
+    if time.time() < timeout:
         PID.calc(sensor_reading)
     else:
         mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
