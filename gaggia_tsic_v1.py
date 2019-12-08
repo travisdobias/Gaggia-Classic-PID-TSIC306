@@ -115,7 +115,7 @@ class PIDController:
         # heat the boiler elements if the PID output is positive
 
         if self.output>0:
-            if self.sensor_reading>0: #safety catch incase PID is in error state
+            if self.sensor_reading>0 and self.sensor_reading<self.setpoint: #safety catch incase PID is in error state
                 if self.output>100:
                     self.output=100
                 boilerPWM.start(self.output)
@@ -246,6 +246,7 @@ while True:
         mylcd.lcd_display_string(time.strftime("%A"),2,0)
         mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
     else:
+        boilerPWM.stop() #boiler off
         mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
         mylcd.lcd_display_string("    SLEEP",1,7)
         mylcd.lcd_display_string(time.strftime("%A"),2,0)
