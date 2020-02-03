@@ -12,7 +12,11 @@ The project uses:
 - switchable logging to CSV
 - switchable verbose logging to console
 - LCD temp display for 1602 via I2C interface
+- sleep mode: turns the boiler off after x minutes
 - Steam mode
 - temp setpoint adjustment
 - Flush function
 - settings autosave to disk
+
+# Other:
+- 3d printable enclosure: https://www.thingiverse.com/thing:4140909
