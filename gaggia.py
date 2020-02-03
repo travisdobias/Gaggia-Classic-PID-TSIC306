@@ -56,7 +56,8 @@ program will hang, and the boiler should cut off.
 Another way of running it is with the no-hang up feature:
 sudo nohup python3 gaggia_tsic_v1.py &
 
-or modify the program to add a UI, LCD or other features!
+or add a startup script as described here:
+https://www.instructables.com/id/Raspberry-Pi-Launch-Python-script-on-startup/
 
 """
 
