@@ -249,8 +249,6 @@ def increment_setpoint(settings):
 #main
 killer = GracefulKiller()
 
-#GPIO.add_event_detect(16,GPIO.RISING,callback=button_callback) # Setup event on pin 10 rising edge
-
 # the boiler control uses artifical pulse-width modulation of the Pi
 # PIN 23 is assigned to a Fostek SSR wired to the boiler
 # 50 HZ is the switch rate which should allow the SSR to switch on/off
