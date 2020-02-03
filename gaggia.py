@@ -6,7 +6,7 @@ gaggia_tisc_v1.py: This is a simple python script to run a PID temp controller o
 Gaggia Classic coffee machine using a raspberry pi and a TSIC306 temp sensor.
 
 __author__      = "Travis Dobias"
-__copyright__   = "Copyright 2019"
+__copyright__   = "Copyright 2020"
 __email__       = "travis@dobias.be"
 
 For temperature monitoring, this uses a TSIC style probe attached to the
@@ -41,6 +41,15 @@ the coffee machine from the main current before working inside the machine.
 # PIN 3 - SCA for LCD
 # PIN 5 - SCL for LCD
 
+# PIN 40 - GPIO21 contact switch for steam on/off
+# PIN 39 - ground for pin 22
+
+# PIN 36 - GPIO16 contact switch for increment setpoint
+# PIN 34 - ground for pin 36
+
+# PIN 32 - GPIO 12 contact switch for flush
+# PIN 30 - Ground for pin 32
+
 you can run the program from a ssh session, but if the session hangs, the
 program will hang, and the boiler should cut off.
 
@@ -60,13 +69,18 @@ import RPi.GPIO as GPIO
 import signal
 import sys
 import I2C_LCD_driver
+import json
 from datetime import datetime
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 GPIO.setup(23, GPIO.OUT)
 GPIO.setup(24, GPIO.OUT)
-GPIO.setup(27, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.output(24,GPIO.LOW) # switch off pump in case it is already on
+GPIO.setup(27, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) #brew
+GPIO.setup(21, GPIO.IN, pull_up_down=GPIO.PUD_UP) #steam
+GPIO.setup(16, GPIO.IN, pull_up_down=GPIO.PUD_UP) #change temp
+GPIO.setup(12, GPIO.IN, pull_up_down=GPIO.PUD_UP) #change temp
 
 mylcd = I2C_LCD_driver.lcd()
 pi = pigpio.pi()
@@ -85,7 +99,7 @@ class GracefulKiller:
 # it as a class because why not.
 
 class PIDController:
-    def __init__(self, setpoint, antiwindup, Kp, Kd, Ki):
+    def __init__(self, setpoint, antiwindup, Kp, Kd, Ki, name):
         self.setpoint = setpoint
         self.previous_delta = 0
         self.delta = 0
@@ -99,6 +113,7 @@ class PIDController:
         self.output = 0
         self.boiler = 0
         self.sensor_reading = 0
+        self.name = name
 
     def calc(self, x):
 
@@ -127,10 +142,14 @@ class PIDController:
             self.boiler=0
 
         # debug features
-        if verbose:
-            print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(self.sensor_reading), "{0:8.0f}".format(self.boiler), "{0:8.1f}".format(self.output),"{0:8.1f}".format(self.delta * self.Kp),"{0:8.1f}".format(self.integral * self.Ki),"{0:8.1f}".format(self.Kd * self.derivative),"{0:>8s}".format('PID'))
-
+        if settings["verbose"]:
+            print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(self.sensor_reading), "{0:8.0f}".format(self.boiler), "{0:8.1f}".format(self.output),"{0:8.1f}".format(self.delta * self.Kp),"{0:8.1f}".format(self.integral * self.Ki),"{0:8.1f}".format(self.Kd * self.derivative),"{0:>8s}".format(self.name))
         time.sleep(.3)
+
+# def logging():
+#     if settings["verbose"]:
+#         print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(self.sensor_reading), "{0:8.0f}".format(self.boiler), "{0:8.1f}".format(self.output),"{0:8.1f}".format(self.delta * self.Kp),"{0:8.1f}".format(self.integral * self.Ki),"{0:8.1f}".format(self.Kd * self.derivative),"{0:>8s}".format(self.name))
+
 
 def read_temp():
 
@@ -139,9 +158,10 @@ def read_temp():
         return temp_c
 
 # this function is triggered when the brewbutton is switched on
-def BrewButton():
+def Brew():
 
     #preheat boiler elements for 1 second before pumping
+    mylcd.lcd_display_string("{:5d}".format(100)+"% PRE",1,6)
     boilerPWM.start(100)
     time.sleep(1)
     boilerPWM.stop()
@@ -151,85 +171,135 @@ def BrewButton():
 
     # this runs the boiler while the pump is brewing to maintain the water
     # temp as the boiler pulls in cold water from the tank
-    boost=13
-    while GPIO.input(27):
-        boost=boost+1
-        sensor_reading=read_temp()
-        if boost>50:
-            boost=50
-        if sensor_reading < setpoint:
-            boilerPWM.start(boost) # heat boiler while pump is running to maintain temp
-        else:
-            boilerPWM.stop()
 
-        # write temp to LCD
-        mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
-        mylcd.lcd_display_string("{:5d}".format(boost)+"% BRW",1,6)
+    while GPIO.input(27):
+
+        sensor_reading=read_temp()
+        BRW.calc(sensor_reading)
+        mylcd.lcd_display_string("{0:0.1f}".format(BRW.sensor_reading)+chr(223)+"c ",1,0)
+        mylcd.lcd_display_string("{:5d}".format(BRW.output)+"% BRW",1,6)
         mylcd.lcd_display_string(time.strftime("%A"),2,0)
         mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
 
         time.sleep(.3)
 
-        if verbose:
-            print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(boost), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Brew'))
+#        if verbose:
+#            print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(BRW.output), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Brew'))
 
     GPIO.output(24,GPIO.LOW) #  turn off pump
     boilerPWM.stop() #boiler off
 
-def SteamButton():
+def Steam():
+    mylcd.lcd_clear()
+    mylcd.lcd_display_string("STEAM",1,0)
+    time.sleep(.5)
 
-    while GPIO.input(40):
+    max = time.time() + 900
+    while GPIO.input(21):
+
+        if time.time() > max:
+            break
 
         sensor_reading=read_temp()
+        STM.calc(sensor_reading)
 
-        if sensor_reading < steam:
-            boilerPWM.start(100)
-        else:
-            boilerPWM.stop()
+        mylcd.lcd_display_string("{0:0.1f}".format(STM.sensor_reading)+chr(223)+"c ",1,7)
+        mylcd.lcd_display_string("{:5d}".format(STM.output)+"% PWR",2,0)
+        mylcd.lcd_display_string("STEAM",1,0)
+
         time.sleep(.3)
-        # write temp to LCD
-        mylcd.lcd_display_string("{0:0.1f}".format(sensor_reading)+chr(223)+"c ",1,0)
-        mylcd.lcd_display_string("{:5d}".format(boost)+"% STM",1,6)
-        mylcd.lcd_display_string(time.strftime("%A"),2,0)
-        mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
 
-        if verbose:
+        if settings["verbose"]:
             print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(boost), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Steam'))
 
     boilerPWM.stop() #boiler off
+    mylcd.lcd_clear()
+    time.sleep(.5)
+
+def flush():
+    mylcd.lcd_clear()
+    mylcd.lcd_display_string("FLUSH",1,0)
+    time.sleep(.5)
+    GPIO.output(24,GPIO.HIGH)
+    time.sleep(15)
+    GPIO.output(24,GPIO.LOW)
+    mylcd.lcd_clear()
+
+def increment_setpoint(settings):
+#    print("Button was pushed!")
+    mylcd.lcd_clear()
+    mylcd.lcd_display_string("setpoint: " + "{0:0.1f}".format(settings["setpoint"])+chr(223)+"c ",1,0)
+    time.sleep(2)
+    while GPIO.input(16) == GPIO.LOW:
+        settings["setpoint"] +=.1
+        if settings["setpoint"]>100:
+            settings["setpoint"] = 94
+        mylcd.lcd_display_string("setpoint: " + "{0:0.1f}".format(settings["setpoint"])+chr(223)+"c ",1,0)
+        time.sleep(.3)
+
+    for x in range(0, 8):
+        mylcd.lcd_clear()
+        time.sleep(.1)
+        mylcd.lcd_display_string("setpoint: " + "{0:0.1f}".format(settings["setpoint"])+chr(223)+"c ",1,0)
+        time.sleep(.1)
+
+    file = open("settings2.txt","w+")
+    file.write(json.dumps(settings))
+    file.close()
 
 #main
 killer = GracefulKiller()
 
+#GPIO.add_event_detect(16,GPIO.RISING,callback=button_callback) # Setup event on pin 10 rising edge
+
 # the boiler control uses artifical pulse-width modulation of the Pi
-# PIN 23 is assigned to the Fostek SSR in this example
+# PIN 23 is assigned to a Fostek SSR wired to the boiler
 # 50 HZ is the switch rate which should allow the SSR to switch on/off
 # in line with the AC phases of the 220v mains current
 boilerPWM=GPIO.PWM(23, 50)
 
-# environment variables; could be put in an include file
-integral = 0
-delta = 0
-derivative = 0
-setpoint = 96.5
-steam = 125
-dt = 1
-Kp = 6
-Ki = 0.06 #0.03
-Kd = 48  #.030 is 1.1 degree
-antiwindup = 2
-verbose = False
-minutes = 30
-timeout = time.time() + 60*minutes
+# read config settings from JSON file
 
-# instantiate PID object
-PID=PIDController(setpoint, antiwindup, Kp, Kd, Ki)
+try:
+    file = open("settings2.txt","r")
+    x = file.read()
+    file.close()
+    settings = json.loads(x)
+    timeout = time.time() + 60*settings["minutes"]
 
+except FileNotFoundError:
+    # if config file not found, make one
+
+    settings = {
+        "setpoint": 96.5,
+        "integral": 0,
+        "delta": 0,
+        "derivative" : 0,
+        "steam" : 130,
+        "dt" : 1,
+        "Kp" : 6,
+        "Ki" : 0.06,
+        "Kd" : 48,
+        "antiwindup" : 2,
+        "verbose" : False,
+        "minutes" : 30,
+    }
+
+    # convert and write to JSON config file:
+    file = open("settings2.txt","w+")
+    file.write(json.dumps(settings))
+    file.close()
+    timeout = time.time() + 60*setting["minutes"]
+
+# instantiate PID objects
+PID=PIDController(settings["setpoint"], settings["antiwindup"], settings["Kp"], settings["Kd"], settings["Ki"], 'PID')
+BRW=PIDController(settings["setpoint"]+2, settings["antiwindup"], 12, settings["Kd"], 0, 'BRW')
+STM=PIDController(settings["steam"], settings["antiwindup"], settings["Kp"], settings["Kd"], settings["Ki"], 'STM')
 
 print("Gaggia PID Started:", os.path.basename(__file__))
-if verbose:
+if settings["verbose"]:
     print("Press control-c or kill " +str(os.getpid())+ " to end.")
-    print("setpoint:",setpoint,"\r\ndt:",dt,"\r\nKp:",Kp,"\r\nKi:",Ki,"\r\nKd:",Kd)
+    print("setpoint:",settings["setpoint"],"\r\ndt:",settings["setpoint"],"\r\nKp:",settings["Kp"],"\r\nKi:",settings["Ki"],"\r\nKd:",settings["Kd"])
     print("Time","{0:>12s}".format("Temp"),"{0:>8s}".format("boiler"),"{0:>8s}".format("Out"),"{0:>8s}".format("P"),"{0:>8s}".format("I"),"{0:>8s}".format("D"),"{0:>8s}".format("action"))
 else:
     print("terminal output suppressed.  Press control-c or kill " +str(os.getpid())+ " to end.")
@@ -251,16 +321,21 @@ while True:
         mylcd.lcd_display_string("    SLEEP",1,7)
         mylcd.lcd_display_string(time.strftime("%A"),2,0)
         mylcd.lcd_display_string(time.strftime("%H:%M"),2,11)
-        if verbose:
+        if settings["verbose"]:
             print(time.strftime("%H:%M:%S"), "{0:8.3f}".format(sensor_reading), "{0:8.0f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0), "{0:8.1f}".format(0),"{0:>8s}".format('Sleep'))
 
     if GPIO.input(27):
-    #    if abs(sensor_reading - setpoint) < 1: #don't start brew unless temp is in range
-        BrewButton()
-        timeout = time.time() + 60*minutes
+        Brew()
+        timeout = time.time() + 60*settings["minutes"]
 
-#    if GPIO.input(40):
-#        SteamButton()
+    if GPIO.input(21) == GPIO.LOW:
+        Steam()
+
+    if GPIO.input(16) == GPIO.LOW:
+        increment_setpoint(settings)
+
+    if GPIO.input(12) == GPIO.LOW:
+        flush()
 
 
     # this traps errors including keyboard interrupt to switch the boiler
