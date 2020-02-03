@@ -226,7 +226,6 @@ def flush():
     mylcd.lcd_clear()
 
 def increment_setpoint(settings):
-#    print("Button was pushed!")
     mylcd.lcd_clear()
     mylcd.lcd_display_string("setpoint: " + "{0:0.1f}".format(settings["setpoint"])+chr(223)+"c ",1,0)
     time.sleep(2)
