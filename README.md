@@ -12,4 +12,7 @@ The project uses:
 - switchable logging to CSV
 - switchable verbose logging to console
 - LCD temp display for 1602 via I2C interface
-
+- Steam mode
+- temp setpoint adjustment
+- Flush function
+- settings autosave to disk
